@@ -1,22 +1,20 @@
-import os
 from typing import Optional
 import telebot
 from dotenv import load_dotenv
 from telebot.types import (Message, ReplyKeyboardMarkup, ReplyKeyboardRemove)
 from values import VALUES
 from TOKEN import token
-from extensions import Converter, DataValidationException
+from extensions import APIException, CurrencyConverter
 
 
 
 
 
-COMMANDS_BUTTONS = ReplyKeyboardMarkup(resize_keyboard=True) #Создаём переменную встроенныч кнопок в клавиатуре
+COMMANDS_BUTTONS = ReplyKeyboardMarkup(resize_keyboard=True) #Создаём переменную встроенных кнопок в клавиатуре
 COMMANDS_BUTTONS.add('/start', '/help', '/values', '/convert') #Называем созданные кнопки
 
 
 load_dotenv()
-#token = os.getenv('TOKEN')
 bot = telebot.TeleBot(token)
 
 
@@ -54,7 +52,7 @@ def command_start(message: Message) -> None:
 def command_help(message: Message) -> None:
     text = (f'***ИНСТРУКЦИЯ***\n __________________________ \n \n Для того, что бы конвертировать валюту, нажмите '
             f'кнопку /convert.'
-            f'\n Выбирите валюту, из которой желаете конвертировать, а также валюту в которую будем конвертировать.'
+            f'\n Введите валюту, из которой желаете конвертировать, а также валюту в которую будем конвертировать.'
             f'\n Затем введите желаемую сумму для конвертации')
     reply_markup = COMMANDS_BUTTONS
     bot.send_message(message.chat.id, text, reply_markup=reply_markup)
@@ -72,62 +70,29 @@ def command_values(message: Message) -> None:
 
 @bot.message_handler(commands=['convert'])#Оброботчик команды /convert
 def command_convert(message: Message) -> None:
-    text = 'Какую валюту нужно конвертировать?'
+    text = (f'Через пробел!!!! \n Введите валюту которую желаете конвертировать, затем в какую конвертируем и сумму')
     reply_markup = COMMANDS_BUTTONS
     bot.send_message(message.chat.id, text, reply_markup=reply_markup)
-    bot.register_next_step_handler(message, ask_base)#регистрируем следующий шаг. Функцию запроса первой валюты
+    bot.register_next_step_handler(message, convert_currency)#регистрируем следующий шаг. Функцию запроса первой валюты
 
 
-def ask_base(message: Message) -> None:#Функция ввода первой валюты
-
+@bot.message_handler(content_types=['text'])
+def convert_currency(massage):
     try:
-        base = message.text.strip()
-    except AttributeError:#Исключение при неправильном вводе валюты
-        text = 'Давайте попробуем ещё раз!!!'
-        reply_markup = COMMANDS_BUTTONS
-        bot.register_next_step_handler(message, ask_base)#Возврашаем функцию первой валюты
-    else:
-        text = 'В какую валюту конвертируем?'
-        reply_markup = COMMANDS_BUTTONS
-        bot.register_next_step_handler(message, ask_quote, base)#Регистрируем следующий шаг.Функцию второй валюты
-    finally:
-        bot.send_message(message.chat.id, text=text, reply_markup=reply_markup)
+        VALUES = massage.text.split()
 
+        if len(VALUES) != 3:
+            raise APIException('Неправильное количество параметров. Введите три параметра!')
 
-def ask_quote(message: Message, base: str) -> None:#Функция ввода второй валюты
+        base, quote, amount = VALUES
+        converted_amount = CurrencyConverter.get_price(base, quote, amount)
+        text = f'Цена {amount} {base} в {quote} - {converted_amount}'
+        bot.reply_to(massage, text)
 
-    try:
-        quote = message.text.strip()
-    except AttributeError:#Исключение при неправильном вводе валюты
-        text = 'Давайте попробуем ещё раз!!!'
-        reply_markup = make_smart_keyboard(key=quote)
-        bot.register_next_step_handler(message, ask_quote, quote)#Возвращаем функцию второй валюты
-    else:
-        text = 'Введите сумму сколько хотите конвертировать!'
-        reply_markup = ReplyKeyboardRemove()
-        bot.register_next_step_handler(message, ask_base_amount, ask_base, quote)#Регистрируем следующий шаг.Функцию суммы валюты
-    finally:
-        bot.send_message(message.chat.id, text=text, reply_markup=reply_markup)
-
-def ask_base_amount(message: Message, base: str, quote: str) -> None:#Функция ввода суммы первой валюты
-
-    try:
-        base_amount = message.text.strip()
-    except AttributeError:#Исключение при неправильном вводе суммы валюты
-        text = 'Давайте попробуем ещё раз!!!'
-        reply_markup = ReplyKeyboardRemove
-        bot.register_next_step_handler(message, ask_base_amount, base, quote)#Возвращаем функцию ввода суммы валюты
-    else:
-        try:
-            text = Converter.convert(base_amount, base, quote)#При соблюдении условий: производим конвертацию
-        except DataValidationException as e:#Сообщение об ошибки ввода валют вне диапозона задданых в боте валют
-            text = e
-        except Exception as e:#Сообщение при невозможности связаться с сайтом для конвертации
-            text = f'Что-то пошло не так:\n\n{e}\n\nПопробуйте позже!'
-        finally:
-            reply_markup = COMMANDS_BUTTONS
-    finally:
-        bot.send_message(message.chat.id, text=text, reply_markup=reply_markup)
+    except APIException as e:
+        bot.reply_to(massage, 'Ошибка пользователя. \n{e}')
+    except APIException as e:
+        bot.reply_to(massage, 'Ошибка при обработке команды. \n{e}')
 
 
 
@@ -136,6 +101,7 @@ def ask_base_amount(message: Message, base: str, quote: str) -> None:#Функц
 
 
 
+if __name__ == '__main__':
 
-bot.polling(non_stop=True)
+    bot.polling(non_stop=True)
 

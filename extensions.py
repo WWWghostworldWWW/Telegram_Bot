@@ -2,49 +2,42 @@ import json
 import requests
 from values import VALUES
 
-
-
-class DataValidationException(Exception):
+class APIException(Exception):
     pass
 
 
-class Converter():
+class CurrencyConverter:
+    currency = VALUES
+
+
     @staticmethod
-
-    def convert(base: str, quote: str, base_amount: str) -> str:
-
+    def get_price(base: str, quote: str, amount: str):
         try:
-            base_key = VALUES[base.lower()]
-        except KeyError:
-            e = f'Ошибка!!!\n Указанная вами валюта {base} не найдена.'
-            raise DataValidationException(e)
-
-        try:
-            quote_key = VALUES[quote.lower()]
-        except KeyError:
-            e = f'Ошибка!!!\n Указанная вами валюта {base} не найдена.'
-            raise DataValidationException(e)
-
-        if base_key == quote_key:
-            e = f'Ошибка!!!\n Невозможно конвертировать одинаковые валюты.'
-            raise DataValidationException(e)
-
-        try:
-            base_amount = float(base_amount.replace(',', '.'))
+            amount=float(amount)
         except ValueError:
-            e = f'Ошибка!!!\n Неудалось обработать количество {base_amount}.'
-            raise DataValidationException(e)
+            raise APIException(f'Неудалось обработать количество {amount}. Введите число!')
 
-        url = (f'https://https://api.apilayer.com/currency_data/convert?to={base_key}&from={quote_key}&amount={base_amount}')
-        headers = {
-            "apikey": "EVHQMG9HEYCfbtz7IjmAkWNJ5ZGPkzr5"
-        }
-        response = requests.request("GET", url, headers=headers)
-        result = response.text
-        data = json.loads(response.content)
+        base = CurrencyConverter.currency.get(base.lower(), base.upper())
+        quote= CurrencyConverter.currency.get(quote.lower(), quote.upper())
 
-        quote_amount = round(data, result, 2)
-        return f'{base_amount:.2f} {base_key} → {quote_amount} {quote_key}'
+        if base == quote:
+            raise APIException(f'Нет смысла переводить одинаковую валюту {base}!')
+
+
+        url = f'https://v6.exchangerate-api.com/v6/88d9234997a222d0b342cb12/latest/{base}'
+        response = requests.get(url)
+        data = response.json()
+
+        if response.status_code != 200:
+            raise APIException('Не удалось получиить ответ от сервера!')
+
+        rates = data.get('conversion_rates', {})
+
+        if quote not in rates:
+            raise APIException(f'Валюта {quote} не найдена!')
+
+        converted_amount = rates[quote] * amount
+        return round(converted_amount, 2)
 
 
 
